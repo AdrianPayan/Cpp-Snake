@@ -21,8 +21,9 @@ class Game {
 
   void SaveScore(const std::string &playerName);
   void DisplayTopPlayers();
-  void PlaceExtraFood();
-  void ExtraFoodTimer();
+  void UpdateSnake();
+  void UpdateFood();
+  void UpdateExtra();
 
  private:
   Snake snake;
@@ -40,7 +41,6 @@ class Game {
   std::thread extraFoodThread;
 
   void PlaceFood();
-  void Update();
   void LoadScoresFromFile();
   
   struct Player
@@ -50,7 +50,6 @@ class Game {
   };
   std::vector<Player> playerScores;
   std::mutex mtx;
-  std::mutex dataMutex;
   std::condition_variable condition_var;
   
   void UpdateThread(std::size_t target_frame_duration);

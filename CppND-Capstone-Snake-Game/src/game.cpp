@@ -19,8 +19,6 @@ Game::~Game(){
 }
 void Game::Run(Controller const &controller, Renderer &renderer, std::size_t target_frame_duration) {
   
-  std::thread updateThread(&Game::UpdateThread, this, target_frame_duration);
-  
   Uint32 title_timestamp = SDL_GetTicks();
   Uint32 frame_start;
   Uint32 frame_end;
@@ -36,7 +34,6 @@ void Game::Run(Controller const &controller, Renderer &renderer, std::size_t tar
     {
       break;
     }
-    std::lock_guard<std::mutex> lock(dataMutex);
     renderer.Render(snake, food, extra, mine);
 
     frame_end = SDL_GetTicks();
@@ -60,8 +57,6 @@ void Game::Run(Controller const &controller, Renderer &renderer, std::size_t tar
       SDL_Delay(target_frame_duration - frame_duration);
     }
   }
-  updateThread.join();
-  extraFoodThread.join();
 }
 
 void Game::PlaceFood() {
@@ -80,18 +75,6 @@ void Game::PlaceFood() {
     // Check that the location is not occupied by a snake item before placing
     // food.
     if ((!snake.SnakeCell(x, y)) && (!snake.SnakeCell(xd, yd)) &&(!snake.SnakeCell(xm,ym))) {
-    	if (!is_extra_active) {
-          	food.x = x;
-      		food.y = y;
-          	
-        	extra.x = -1;
-        	extra.y = -1;
-          
-          	mine.x=xm;
-      		mine.y=ym;
-          
-          return;
-   	  }else{
       
       	food.x = x;
       	food.y = y;
@@ -103,78 +86,46 @@ void Game::PlaceFood() {
       	mine.y=ym;
 
       return;
-      }
     }
   }
 }
 
-void Game::Update() {
-  if (!snake.alive) return;
-
-  snake.Update();
-
-  int new_x = static_cast<int>(snake.head_x);
-  int new_y = static_cast<int>(snake.head_y);
-
-  // Check if there's food over here
-  if (food.x == new_x && food.y == new_y) {
-    score++;
-    PlaceFood();
-    if (!is_extra_active)
-    { // Check if bonus food is already active
-      std::lock_guard<std::mutex> lock(dataMutex);
-      is_extra_active = true;
-      extraFoodThread = std::thread(&Game::ExtraFoodTimer, this);
-    }
-    
-    // Grow snake and increase speed.
-    snake.GrowBody();
-    snake.speed += 0.02;
+void Game::UpdateSnake() {
+    std::lock_guard<std::mutex> lock(mtx);
+    if (!snake.alive) return;
+  	snake.Update();
   }
-  //Adquire 2 score points and get double the speed gained with normal food, but growing the same size as the normal food
-  else if(extra.x != -1 && extra.y != -1 && extra.x == new_x && extra.y == new_y){
+void Game::UpdateFood(){
+    std::lock_guard<std::mutex> lock(mtx);
+    int new_x = static_cast<int>(snake.head_x);
+  	int new_y = static_cast<int>(snake.head_y);
+    if (food.x == new_x && food.y == new_y) {
+    	score++;
+    	PlaceFood();
+    	// Grow snake and increase speed.
+    	snake.GrowBody();
+    	snake.speed += 0.02;
+  	}else if(mine.x == new_x && mine.y == new_y){
+    	running = false;
+  	}
+}
+  void Game::UpdateExtra(){
+    std::lock_guard<std::mutex> lock(mtx);
+    int new_x = static_cast<int>(snake.head_x);
+  	int new_y = static_cast<int>(snake.head_y);
+    if(extra.x != -1 && extra.y != -1 && extra.x == new_x && extra.y == new_y){
     score = score + 2;
     PlaceFood();
-    if (!is_extra_active)
-    { // Check if bonus food is already active
-      std::lock_guard<std::mutex> lock(dataMutex);
-      is_extra_active = true;
-      extraFoodThread = std::thread(&Game::ExtraFoodTimer, this);
-    }
     
     snake.GrowBody();
     snake.speed += 0.04;
-  }
-  else if(mine.x == new_x && mine.y == new_y){
-    running = false;
-  }
-}
-void Game::ExtraFoodTimer()
-{
-  const int extraSeconds = 5;
-  auto startTime = std::chrono::high_resolution_clock::now();
-  std::unique_lock<std::mutex> lock(dataMutex);
-  while (is_extra_active)
-  {
-    auto current_Time = std::chrono::high_resolution_clock::now();
-    auto elapsed_Seconds = std::chrono::duration_cast<std::chrono::seconds>(current_Time - startTime).count();
-    if (elapsed_Seconds >= extraSeconds && is_extra_active)
-    {
-      // Bonus food time is up
-      is_extra_active = false;
-      extra.x = -1;
-      extra.y = -1;
-      break;
-    }
-    // Wait for a short interval or until the condition_variable is notified
-    condition_var.wait_for(lock, std::chrono::milliseconds(800));
   }
 }
 
 int Game::GetScore() const { return score; }
 int Game::GetSize() const { return snake.size; }
 
-void Game::UpdateThread(std::size_t target_frame_duration)
+/*void Game::UpdateThread(std::size_t target_frame_duration)
 {
   while (running)
   {
@@ -182,7 +133,7 @@ void Game::UpdateThread(std::size_t target_frame_duration)
     Update();
     std::this_thread::sleep_for(std::chrono::milliseconds(target_frame_duration));
   }
-}
+}*/
 void Game::SaveScore(const std::string &playerName)
 {
   Player player;
